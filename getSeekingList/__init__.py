@@ -39,6 +39,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             'id': entity['id'],
             'name': entity['name'],
             'set_code': entity['set_code'],
+            'collector_number': entity['collector_number'],
             'language': entity['language'],
             'finish': entity['finish'],
             'image_uri': entity['image_uri'],
@@ -48,6 +49,11 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 'cardmarket': 'unknown'
             }
         } for entity in entities]
+
+        # Add debug logging
+        logging.info('Retrieved cards from table:')
+        for card in cards:
+            logging.info(f"Card: {card['name']}, collector_number: {card.get('collector_number', 'NOT_FOUND')}")
 
         response = func.HttpResponse(
             json.dumps({"cards": cards}),
