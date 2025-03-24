@@ -1,0 +1,4 @@
+pytest==7.4.4
+pytest-asyncio==0.23.5
+azure-functions==1.17.0
+azure-data-tables==12.4.4

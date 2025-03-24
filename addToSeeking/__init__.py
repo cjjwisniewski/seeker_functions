@@ -2,6 +2,7 @@ import logging
 import azure.functions as func
 import json
 from azure.data.tables import TableServiceClient, TableEntity
+from azure.core.exceptions import ResourceExistsError
 import os
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
@@ -61,9 +62,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             finish=req_body['finish']
         )
 
-        # Create the entity in the table
         table_client.create_entity(entity=entity)
-
         response = func.HttpResponse(
             json.dumps({
                 "message": "Card added to seeking list successfully",
@@ -71,6 +70,18 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             }),
             mimetype="application/json",
             status_code=200
+        )
+        return add_cors_headers(response)
+
+    except ResourceExistsError:
+        logging.info(f"Card already exists in seeking list for user: {user_id}")
+        response = func.HttpResponse(
+            json.dumps({
+                "message": "Card already exists in seeking list",
+                "error": "ALREADY_EXISTS"
+            }),
+            mimetype="application/json",
+            status_code=409
         )
         return add_cors_headers(response)
 
@@ -85,7 +96,11 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     except Exception as e:
         logging.error(f"Error details: {type(e).__name__}: {str(e)}")
         response = func.HttpResponse(
-            f"Internal server error: {type(e).__name__}: {str(e)}",
+            json.dumps({
+                "message": "Internal server error",
+                "error": f"{type(e).__name__}: {str(e)}"
+            }),
+            mimetype="application/json",
             status_code=500
         )
         return add_cors_headers(response)
