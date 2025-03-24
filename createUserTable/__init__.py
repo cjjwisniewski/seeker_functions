@@ -1,30 +1,30 @@
 import logging
 import azure.functions as func
-from azure.data.tables import TableServiceClient, TableClient
-from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
 import os
+from azure.data.tables import TableServiceClient
+from azure.core.exceptions import ResourceNotFoundError
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
-    logging.info('Python HTTP trigger function processed a request.')
+    logging.info('Function triggered with headers: %s', dict(req.headers))
 
-    # Get the Discord user ID from the auth header
-    discord_user_id = req.headers.get('x-ms-client-principal-id')
-    if not discord_user_id:
+    user_id = req.headers.get('x-ms-client-principal-id')
+    if not user_id:
         return func.HttpResponse(
-            "Unauthorized - No user ID found",
-            status_code=401
+            "No user ID provided",
+            status_code=400
         )
 
     try:
-        # Initialize the connection to Azure Table Storage
-        connection_string = os.environ["AZURE_STORAGE_CONNECTION_STRING"]
-        table_service = TableServiceClient.from_connection_string(connection_string)
-        table_name = f"{discord_user_id}"
+        conn_string = os.environ["AZURE_STORAGE_CONNECTION_STRING"]
+        logging.info("Creating TableServiceClient with connection string")
+        
+        table_service = TableServiceClient.from_connection_string(conn_string)
+        table_name = f"{user_id}"
+        logging.info(f"Working with table: {table_name}")
 
-        # Check if table exists
         try:
             table_client = table_service.get_table_client(table_name)
-            # Try to query the table to verify it exists
+            logging.info("Checking if table exists...")
             next(table_client.query_entities("", results_per_page=1), None)
             return func.HttpResponse(
                 '{"message": "Table already exists"}',
@@ -32,7 +32,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 status_code=200
             )
         except ResourceNotFoundError:
-            # Table doesn't exist, create it
+            logging.info(f"Creating new table: {table_name}")
             table_service.create_table(table_name)
             return func.HttpResponse(
                 '{"message": "Table created successfully"}',
@@ -41,8 +41,8 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             )
 
     except Exception as e:
-        logging.error(f"Error: {str(e)}")
+        logging.error(f"Error details: {type(e).__name__}: {str(e)}")
         return func.HttpResponse(
-            f"Internal server error: {str(e)}",
+            f"Internal server error: {type(e).__name__}: {str(e)}",
             status_code=500
         )
