@@ -19,7 +19,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         # Initialize the connection to Azure Table Storage
         connection_string = os.environ["AZURE_STORAGE_CONNECTION_STRING"]
         table_service = TableServiceClient.from_connection_string(connection_string)
-        table_name = f"user{discord_user_id}Cards"
+        table_name = f"{discord_user_id}"
 
         # Check if table exists
         try:
