@@ -6,6 +6,14 @@
                 "isEnabled": true,
                 "excludedTypes": "Request"
             }
+        },
+        "logLevel": {
+            "default": "Information",
+            "Function": "Debug",
+            "Function.getCardtraderSets": "Debug"
+        },
+        "console": {
+            "isEnabled": true
         }
     },
     "extensionBundle": {
