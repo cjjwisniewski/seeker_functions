@@ -6,7 +6,10 @@ from azure.data.tables import TableServiceClient
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
     def add_cors_headers(response):
-        response.headers['Access-Control-Allow-Origin'] = '*'
+        allowed_origins = ['http://localhost:5173', 'https://seeker.cityoftraitors.com']
+        origin = req.headers.get('Origin', '')
+        if origin in allowed_origins:
+            response.headers['Access-Control-Allow-Origin'] = origin
         response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
         response.headers['Access-Control-Allow-Headers'] = 'Content-Type, x-ms-client-principal-id'
         return response
