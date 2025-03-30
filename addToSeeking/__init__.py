@@ -63,9 +63,9 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             image_uri=req_body['image_uri'],
             timestamp=req_body['timestamp'],
             finish=req_body['finish'],
-            cardtrader_stock='unknown',
-            tcgplayer_stock='unknown',
-            cardmarket_stock='unknown'
+            cardtrader_stock=False,
+            tcgplayer_stock=False,
+            cardmarket_stock=False
         )
 
         table_client.create_entity(entity=entity)

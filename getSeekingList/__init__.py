@@ -46,9 +46,9 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             'language': entity['language'],
             'finish': entity['finish'],
             'image_uri': entity['image_uri'],
-            'cardtrader_stock': entity.get('cardtrader_stock', 'NOT_FOUND'),
-            'tcgplayer_stock': entity.get('tcgplayer_stock', 'NOT_FOUND'),
-            'cardmarket_stock': entity.get('cardmarket_stock', 'NOT_FOUND'),
+            'cardtrader_stock': entity.get('cardtrader_stock', 'unknown') == True,
+            'tcgplayer_stock': entity.get('tcgplayer_stock', 'unknown') == True,
+            'cardmarket_stock': entity.get('cardmarket_stock', 'unknown') == True,
         } for entity in entities]
 
         # Add debug logging
