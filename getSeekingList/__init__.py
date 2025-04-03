@@ -103,6 +103,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             'cardtrader_stock': str(entity.get('cardtrader_stock', 'unknown')).lower() == 'true',
             'tcgplayer_stock': str(entity.get('tcgplayer_stock', 'unknown')).lower() == 'true',
             'cardmarket_stock': str(entity.get('cardmarket_stock', 'unknown')).lower() == 'true',
+            'ebay_stock': str(entity.get('ebay_stock', 'unknown')).lower() == 'true',
         } for entity in entities]
 
         # Optional: Log retrieved card names for debugging

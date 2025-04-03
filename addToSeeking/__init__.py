@@ -65,7 +65,8 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             finish=req_body['finish'],
             cardtrader_stock=False,
             tcgplayer_stock=False,
-            cardmarket_stock=False
+            cardmarket_stock=False,
+            ebay_stock=False,
         )
 
         table_client.create_entity(entity=entity)
