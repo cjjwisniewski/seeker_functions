@@ -507,4 +507,6 @@ def test_rate_limiting(mock_table_service_client, mock_requests_session, mock_ti
 # - test_card_with_missing_pk_rk (should log warning and skip card)
 # - test_update_entity_fails (should log error)
 # - test_upsert_timestamp_fails (should log error)
-# - test_blueprint_missing_id (should log warning, set stock=False)
+# - test_blueprint_missing_id (should log warning, continue with None id, likely fail API call or set stock=False)
+# - test_multiple_blueprints_found (query returns >1, should log warning, use first)
+# - test_query_filter_escaping (card name with single quote)
