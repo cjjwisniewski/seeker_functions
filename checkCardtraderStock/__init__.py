@@ -259,16 +259,42 @@ def main(timer: func.TimerRequest) -> None:
                     # Adjust this logic based on the actual Cardtrader API v2 response.
                     try:
                         data = response.json()
-                        # Assuming the response is a list/array of products/offers
-                        if isinstance(data, list) and len(data) > 0:
-                            stock_status = True
-                        # Or maybe it's an object with a 'data' key containing a list:
-                        # elif isinstance(data, dict) and 'data' in data and isinstance(data['data'], list) and len(data['data']) > 0:
-                        #    stock_status = True
-                        logging.debug(f"API success for blueprint {blueprint_id}. Stock found: {stock_status}")
+                        target_language = card.get('language', '').lower() # Get target language from our entity
+                        target_finish = card.get('finish', '').lower() # Get target finish from our entity
+
+                        # Iterate through returned marketplace items to find an exact match
+                        found_match = False
+                        if isinstance(data, list): # Assuming response is a list of items
+                            for item in data:
+                                # --- Adjust field names based on actual Cardtrader API response ---
+                                item_language = item.get('language', '').lower() # Example field name
+                                item_properties = item.get('properties', {}) # Example: properties might contain finish info
+                                item_is_foil = item_properties.get('foil', False) # Example: boolean foil flag
+                                # item_finish = item_properties.get('finish', '').lower() # Example: string finish field
+
+                                # Determine if the item's finish matches the target
+                                item_finish_match = False
+                                if target_finish == 'foil' and item_is_foil:
+                                     item_finish_match = True
+                                elif target_finish == 'nonfoil' and not item_is_foil:
+                                     item_finish_match = True
+                                # Add checks for other finishes like 'etched' if necessary, comparing with item_finish or similar field
+
+                                # Check if both language and finish match
+                                if item_language == target_language and item_finish_match:
+                                    found_match = True
+                                    break # Found at least one matching item
+                            # --- End of fields to adjust ---
+
+                        stock_status = found_match # Set stock status based on finding a match
+                        logging.debug(f"API success for blueprint {blueprint_id}. Exact match found: {stock_status} (Lang: {target_language}, Finish: {target_finish})")
+
                     except ValueError: # Includes JSONDecodeError
                          logging.error(f"Failed to decode JSON response for blueprint {blueprint_id}. URL: {api_url}, Status: {response.status_code}")
                          stock_status = False # Treat decode error as out of stock
+                    except Exception as parse_e:
+                         logging.error(f"Error parsing Cardtrader response for blueprint {blueprint_id}: {parse_e}")
+                         stock_status = False # Treat parsing error as out of stock
                 elif response.status_code == 404:
                      logging.warning(f"Cardtrader API returned 404 Not Found for blueprint {blueprint_id}. URL: {api_url}")
                      stock_status = False # Treat 404 as out of stock
