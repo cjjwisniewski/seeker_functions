@@ -226,7 +226,7 @@ def test_user_never_checked_card_in_stock(mock_table_service_client, mock_reques
     # 6. Timestamp was updated for the user
     expected_ts_entity = {
         'PartitionKey': user_id, 'RowKey': 'Timestamp',
-        'LastChecked': mock_datetime_now.isoformat()
+        'CardtraderLastChecked': mock_datetime_now.isoformat()
     }
     mock_timestamps_client.upsert_entity.assert_called_once_with(entity=expected_ts_entity, mode=UpdateMode.REPLACE)
     assert f"Successfully updated timestamp for user {user_id}" in caplog.text
@@ -255,7 +255,7 @@ def test_user_checked_recently(mock_table_service_client, mock_timer, mock_datet
     mock_timestamps_client = mock_table_service_client.get_table_client(TIMESTAMPS_TABLE_NAME)
     timestamp_entity = TableEntity({
         'PartitionKey': user_id, 'RowKey': 'Timestamp',
-        'LastChecked': recent_check_time.isoformat()
+        'CardtraderLastChecked': recent_check_time.isoformat()
     })
     mock_timestamps_client.list_entities.return_value = [timestamp_entity]
 
@@ -290,7 +290,7 @@ def test_user_checked_long_ago_card_oos(mock_table_service_client, mock_requests
     mock_timestamps_client = mock_table_service_client.get_table_client(TIMESTAMPS_TABLE_NAME)
     timestamp_entity = TableEntity({
         'PartitionKey': user_id, 'RowKey': 'Timestamp',
-        'LastChecked': old_check_time.isoformat()
+        'CardtraderLastChecked': old_check_time.isoformat()
     })
     mock_timestamps_client.list_entities.return_value = [timestamp_entity]
 
@@ -334,7 +334,7 @@ def test_user_checked_long_ago_card_oos(mock_table_service_client, mock_requests
     # 5. Timestamp updated
     expected_ts_entity = {
         'PartitionKey': user_id, 'RowKey': 'Timestamp',
-        'LastChecked': mock_datetime_now.isoformat()
+        'CardtraderLastChecked': mock_datetime_now.isoformat()
     }
     mock_timestamps_client.upsert_entity.assert_called_once_with(entity=expected_ts_entity, mode=UpdateMode.REPLACE)
     assert f"Successfully updated timestamp for user {user_id}" in caplog.text
@@ -359,8 +359,8 @@ def test_multiple_users_selects_oldest(mock_table_service_client, mock_timer, mo
     # Setup: Timestamps table entries
     mock_timestamps_client = mock_table_service_client.get_table_client(TIMESTAMPS_TABLE_NAME)
     timestamps = [
-        TableEntity({'PartitionKey': user_id_recent, 'RowKey': 'Timestamp', 'LastChecked': (now - datetime.timedelta(hours=5)).isoformat()}),
-        TableEntity({'PartitionKey': user_id_oldest, 'RowKey': 'Timestamp', 'LastChecked': (now - datetime.timedelta(days=2)).isoformat()}),
+        TableEntity({'PartitionKey': user_id_recent, 'RowKey': 'Timestamp', 'CardtraderLastChecked': (now - datetime.timedelta(hours=5)).isoformat()}),
+        TableEntity({'PartitionKey': user_id_oldest, 'RowKey': 'Timestamp', 'CardtraderLastChecked': (now - datetime.timedelta(days=2)).isoformat()}),
         # user_id_never has no entry
     ]
     mock_timestamps_client.list_entities.return_value = timestamps
@@ -379,7 +379,7 @@ def test_multiple_users_selects_oldest(mock_table_service_client, mock_timer, mo
     # Ensure the selected user's timestamp is updated
     expected_ts_entity = {
         'PartitionKey': user_id_never, 'RowKey': 'Timestamp',
-        'LastChecked': mock_datetime_now.isoformat()
+        'CardtraderLastChecked': mock_datetime_now.isoformat()
     }
     # Check that upsert was called with the correct user ID
     mock_timestamps_client.upsert_entity.assert_called_once_with(entity=expected_ts_entity, mode=UpdateMode.REPLACE)

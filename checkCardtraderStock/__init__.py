@@ -105,16 +105,16 @@ def main(timer: func.TimerRequest) -> None:
         entities = timestamps_table_client.list_entities()
         for entity in entities:
              # Assuming PartitionKey is the user_id
-             if 'LastChecked' in entity and entity['PartitionKey'] in user_ids:
+             if 'CardtraderLastChecked' in entity and entity['PartitionKey'] in user_ids:
                  # Attempt to parse the timestamp, handling potential format issues
                  try:
-                     last_checked_dt = datetime.datetime.fromisoformat(entity['LastChecked'].replace('Z', '+00:00'))
+                     last_checked_dt = datetime.datetime.fromisoformat(entity['CardtraderLastChecked'].replace('Z', '+00:00'))
                      # Ensure it's timezone-aware (UTC)
                      if last_checked_dt.tzinfo is None:
                          last_checked_dt = pytz.utc.localize(last_checked_dt)
                      user_timestamps[entity['PartitionKey']] = last_checked_dt
                  except (ValueError, TypeError) as dt_error:
-                     logging.warning(f"Could not parse LastChecked timestamp '{entity.get('LastChecked')}' for user {entity['PartitionKey']}: {dt_error}. Treating as never checked.")
+                     logging.warning(f"Could not parse CardtraderLastChecked timestamp '{entity.get('CardtraderLastChecked')}' for user {entity['PartitionKey']}: {dt_error}. Treating as never checked.")
                      user_timestamps[entity['PartitionKey']] = None # Treat invalid date as never checked
 
     except Exception as e:
@@ -156,7 +156,7 @@ def main(timer: func.TimerRequest) -> None:
             timestamp_entity = {
                 'PartitionKey': user_id_to_check,
                 'RowKey': 'Timestamp', # Fixed RowKey for timestamp entries
-                'LastChecked': now_utc.isoformat()
+                'CardtraderLastChecked': now_utc.isoformat()
             }
             timestamps_table_client.upsert_entity(entity=timestamp_entity, mode=UpdateMode.REPLACE)
             logging.info(f"Updated timestamp for skipped user {user_id_to_check}.")
@@ -179,7 +179,7 @@ def main(timer: func.TimerRequest) -> None:
             timestamp_entity = {
                 'PartitionKey': user_id_to_check,
                 'RowKey': 'Timestamp',
-                'LastChecked': now_utc.isoformat()
+                'CardtraderLastChecked': now_utc.isoformat()
             }
             timestamps_table_client.upsert_entity(entity=timestamp_entity, mode=UpdateMode.REPLACE)
             logging.info(f"Updated timestamp for user {user_id_to_check} with empty table.")
@@ -323,7 +323,7 @@ def main(timer: func.TimerRequest) -> None:
         timestamp_entity = {
             'PartitionKey': user_id_to_check,
             'RowKey': 'Timestamp', # Fixed RowKey
-            'LastChecked': now_utc.isoformat()
+            'CardtraderLastChecked': now_utc.isoformat()
         }
         timestamps_table_client.upsert_entity(entity=timestamp_entity, mode=UpdateMode.REPLACE)
         logging.info(f"Successfully updated timestamp for user {user_id_to_check}")
