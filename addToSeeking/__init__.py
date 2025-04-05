@@ -63,7 +63,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             image_uri=req_body['image_uri'],
             timestamp=req_body['timestamp'],
             finish=req_body['finish'],
-            cardtrader_stock=False,
+            cardtrader_stock=False, # Initialize stock status
             tcgplayer_stock=False,
             cardmarket_stock=False,
             ebay_stock=False,
