@@ -22,6 +22,12 @@ CARDTRADER_MARKETPLACE_URL = "https://api.cardtrader.com/v2/marketplace/products
 RATE_LIMIT_SECONDS = 1.1 # Slightly more than 1 second to be safe
 CHECK_INTERVAL_HOURS = 24 # Check each user at most once per day
 
+# Mapping for known Scryfall set codes to Cardtrader set codes
+SCRYFALL_TO_CARDTRADER_SET_MAP = {
+    '4bb': '4ebb',
+    # Add other known mappings here as needed
+}
+
 def get_cardtrader_session():
     """Creates a requests session with Cardtrader auth headers."""
     if not CARDTRADER_API_KEY:
