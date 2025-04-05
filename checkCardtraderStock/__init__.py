@@ -15,8 +15,8 @@ USER_TABLE_PREFIX = "user" # Prefix for user-specific tables
 
 # Cardtrader API settings - use environment variables
 CARDTRADER_API_KEY = os.environ.get("CARDTRADER_API_KEY")
-# Example URL, replace with the actual marketplace endpoint if different
-CARDTRADER_MARKETPLACE_URL = "https://api.cardtrader.com/v2/marketplace/products/{blueprint_id}"
+# Base URL for the marketplace endpoint
+CARDTRADER_MARKETPLACE_URL = "https://api.cardtrader.com/v2/marketplace/products"
 
 # Configuration
 RATE_LIMIT_SECONDS = 1.1 # Slightly more than 1 second to be safe
@@ -243,10 +243,25 @@ def main(timer: func.TimerRequest) -> None:
                     logging.debug(f"Rate limiting: waiting {wait_time:.2f} seconds.")
                     time.sleep(wait_time)
 
-                # ii. Call Cardtrader API
-                api_url = CARDTRADER_MARKETPLACE_URL.format(blueprint_id=blueprint_id)
-                logging.debug(f"Calling Cardtrader API: {api_url}")
-                response = ct_session.get(api_url, timeout=10) # Add timeout
+                # ii. Call Cardtrader API with query parameters
+                target_language = card.get('language', '').lower() # Get target language from our entity
+                target_finish = card.get('finish', '').lower() # Get target finish from our entity
+
+                api_params = {'blueprint_id': blueprint_id}
+                if target_language:
+                    api_params['language'] = target_language
+                if target_finish == 'foil':
+                    api_params['foil'] = 'true'
+                elif target_finish == 'nonfoil':
+                     # Assuming Cardtrader API supports foil=false for non-foil,
+                     # or defaults to non-foil if parameter is absent.
+                     # Check API docs if non-foil needs explicit handling.
+                     # For now, let's explicitly ask for non-foil if specified.
+                     api_params['foil'] = 'false'
+                # Add handling for other finishes like 'etched' if the API supports specific parameters for them
+
+                logging.debug(f"Calling Cardtrader API: {CARDTRADER_MARKETPLACE_URL} with params: {api_params}")
+                response = ct_session.get(CARDTRADER_MARKETPLACE_URL, params=api_params, timeout=10) # Add timeout
                 last_api_call_time = time.time()
                 api_call_count += 1
 
@@ -256,54 +271,33 @@ def main(timer: func.TimerRequest) -> None:
                     # Check if the response body indicates stock.
                     # This depends heavily on the API response structure.
                     # Example: Check if the response list is non-empty.
-                    # Adjust this logic based on the actual Cardtrader API v2 response.
+                    # API filters results based on query params (language, foil).
+                    # We just need to check if the result list is non-empty.
                     try:
                         data = response.json()
-                        target_language = card.get('language', '').lower() # Get target language from our entity
-                        target_finish = card.get('finish', '').lower() # Get target finish from our entity
-
-                        # Iterate through returned marketplace items to find an exact match
-                        found_match = False
-                        if isinstance(data, list): # Assuming response is a list of items
-                            for item in data:
-                                # --- Adjust field names based on actual Cardtrader API response ---
-                                item_language = item.get('language', '').lower() # Example field name
-                                item_properties = item.get('properties', {}) # Example: properties might contain finish info
-                                item_is_foil = item_properties.get('foil', False) # Example: boolean foil flag
-                                # item_finish = item_properties.get('finish', '').lower() # Example: string finish field
-
-                                # Determine if the item's finish matches the target
-                                item_finish_match = False
-                                if target_finish == 'foil' and item_is_foil:
-                                     item_finish_match = True
-                                elif target_finish == 'nonfoil' and not item_is_foil:
-                                     item_finish_match = True
-                                # Add checks for other finishes like 'etched' if necessary, comparing with item_finish or similar field
-
-                                # Check if both language and finish match
-                                if item_language == target_language and item_finish_match:
-                                    found_match = True
-                                    break # Found at least one matching item
-                            # --- End of fields to adjust ---
-
-                        stock_status = found_match # Set stock status based on finding a match
-                        logging.debug(f"API success for blueprint {blueprint_id}. Exact match found: {stock_status} (Lang: {target_language}, Finish: {target_finish})")
+                        # Assuming a non-empty list means stock is available for the specific version requested
+                        if isinstance(data, list) and len(data) > 0:
+                            stock_status = True
+                        else:
+                            stock_status = False
+                        logging.debug(f"API success for blueprint {blueprint_id} with params {api_params}. Stock found: {stock_status}")
 
                     except ValueError: # Includes JSONDecodeError
-                         logging.error(f"Failed to decode JSON response for blueprint {blueprint_id}. URL: {api_url}, Status: {response.status_code}")
+                         logging.error(f"Failed to decode JSON response for blueprint {blueprint_id} with params {api_params}. URL: {response.url}, Status: {response.status_code}")
                          stock_status = False # Treat decode error as out of stock
                     except Exception as parse_e:
-                         logging.error(f"Error parsing Cardtrader response for blueprint {blueprint_id}: {parse_e}")
+                         logging.error(f"Error processing Cardtrader response for blueprint {blueprint_id} with params {api_params}: {parse_e}")
                          stock_status = False # Treat parsing error as out of stock
                 elif response.status_code == 404:
-                     logging.warning(f"Cardtrader API returned 404 Not Found for blueprint {blueprint_id}. URL: {api_url}")
+                     # 404 likely means no items match the specific query (blueprint_id + lang + foil)
+                     logging.info(f"Cardtrader API returned 404 (Not Found) for blueprint {blueprint_id} with params {api_params}. Assuming out of stock. URL: {response.url}")
                      stock_status = False # Treat 404 as out of stock
                 elif response.status_code == 429:
-                    logging.error(f"Cardtrader API rate limit hit (429) for blueprint {blueprint_id}. Stopping check for this user.")
+                    logging.error(f"Cardtrader API rate limit hit (429) for blueprint {blueprint_id} with params {api_params}. Stopping check for this user.")
                     # Optionally break the loop or implement backoff
                     break # Stop processing this user for now
                 else:
-                    logging.error(f"Cardtrader API error for blueprint {blueprint_id}. Status: {response.status_code}, Response: {response.text[:200]}")
+                    logging.error(f"Cardtrader API error for blueprint {blueprint_id} with params {api_params}. Status: {response.status_code}, Response: {response.text[:200]}")
                     stock_status = False # Treat other errors as out of stock
 
                 # iv. Update card entity if status changed
@@ -317,11 +311,11 @@ def main(timer: func.TimerRequest) -> None:
                          logging.error(f"Failed to update stock for {card_name} ({card_pk}/{card_rk}): {update_e}")
 
             except requests.exceptions.RequestException as req_e:
-                logging.error(f"Network error calling Cardtrader API for blueprint {blueprint_id}: {req_e}")
+                logging.error(f"Network error calling Cardtrader API for blueprint {blueprint_id} with params {api_params}: {req_e}")
                 # Decide whether to continue or stop for this user
                 continue # Skip this card on network error
             except Exception as api_e:
-                logging.error(f"Unexpected error during API check for blueprint {blueprint_id}: {api_e}")
+                logging.error(f"Unexpected error during API check for blueprint {blueprint_id} with params {api_params}: {api_e}")
                 continue # Skip this card
 
     # 12. Update timestamp for the checked user
