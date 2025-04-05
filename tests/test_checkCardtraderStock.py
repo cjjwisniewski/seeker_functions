@@ -45,7 +45,8 @@ def mock_table_service_client(monkeypatch):
             mock_client.table_name = table_name
             # Default behaviors (can be overridden in tests)
             mock_client.list_entities.return_value = []
-            mock_client.get_entity.side_effect = ResourceNotFoundError("Entity not found")
+            mock_client.query_entities.return_value = [] # Default for query
+            mock_client.get_entity.side_effect = ResourceNotFoundError("Entity not found") # Keep for other potential uses
             mock_client.create_table.side_effect = HttpResponseError(message="TableAlreadyExists", status_code=409) # Simulate exists by default
             mock_table_clients[table_name] = mock_client
         return mock_table_clients[table_name]
@@ -188,10 +189,16 @@ def test_user_never_checked_card_in_stock(mock_table_service_client, mock_reques
     card_entity = create_card_entity('SET', '123_en_foil', name="Test Foil", lang='en', finish='foil', stock=False)
     mock_user_client.list_entities.return_value = [card_entity]
 
-    # Setup: Blueprint table contains the blueprint with an ID
+    # Setup: Blueprint table query returns the blueprint with an ID
     mock_blueprints_client = mock_table_service_client.get_table_client(BLUEPRINTS_TABLE_NAME)
     blueprint_entity = TableEntity({'id': 999})
-    mock_blueprints_client.get_entity.return_value = blueprint_entity
+    # Mock query_entities to return the blueprint when the filter matches
+    def query_side_effect(*args, **kwargs):
+        query_filter = kwargs.get('query_filter', '')
+        if "PartitionKey eq 'SET'" in query_filter and "name eq 'Test Foil'" in query_filter:
+            return [blueprint_entity]
+        return []
+    mock_blueprints_client.query_entities.side_effect = query_side_effect
 
     # Setup: Cardtrader API response (In Stock - non-empty list)
     mock_response = MagicMock(status_code=200, url="mock://cardtrader/foil")
@@ -205,8 +212,9 @@ def test_user_never_checked_card_in_stock(mock_table_service_client, mock_reques
     # Assertions
     # 1. Correct user selected
     assert f"Selected user table to check: {user_table_name}" in caplog.text
-    # 2. Blueprint was fetched
-    mock_blueprints_client.get_entity.assert_called_once_with(partition_key='SET', row_key='123_en_foil')
+    # 2. Blueprint was queried
+    expected_filter = "PartitionKey eq 'SET' and name eq 'Test Foil'"
+    mock_blueprints_client.query_entities.assert_called_once_with(query_filter=expected_filter, select=['id'])
     # 3. Rate limit sleep was NOT called (first API call)
     mock_time['sleep'].assert_not_called()
     # 4. API was called with correct params for foil card
@@ -299,10 +307,16 @@ def test_user_checked_long_ago_card_oos(mock_table_service_client, mock_requests
     card_entity = create_card_entity('SET', '456_fr_nonfoil', name="Test NonFoil", lang='fr', finish='nonfoil', stock=True)
     mock_user_client.list_entities.return_value = [card_entity]
 
-    # Setup: Blueprint table
+    # Setup: Blueprint table query returns the blueprint
     mock_blueprints_client = mock_table_service_client.get_table_client(BLUEPRINTS_TABLE_NAME)
     blueprint_entity = TableEntity({'id': 1001})
-    mock_blueprints_client.get_entity.return_value = blueprint_entity
+    def query_side_effect(*args, **kwargs):
+        query_filter = kwargs.get('query_filter', '')
+        # Note: Need to handle escaped quotes if card names have them. Test NonFoil doesn't.
+        if "PartitionKey eq 'SET'" in query_filter and "name eq 'Test NonFoil'" in query_filter:
+            return [blueprint_entity]
+        return []
+    mock_blueprints_client.query_entities.side_effect = query_side_effect
 
     # Setup: Cardtrader API response (Out Of Stock - 404)
     mock_response = MagicMock(status_code=404, url="mock://cardtrader/nonfoil/404")
@@ -316,8 +330,9 @@ def test_user_checked_long_ago_card_oos(mock_table_service_client, mock_requests
     # Assertions
     # 1. Correct user selected
     assert f"Selected user table to check: {user_table_name}" in caplog.text
-    # 2. Blueprint fetched
-    mock_blueprints_client.get_entity.assert_called_once_with(partition_key='SET', row_key='456_fr_nonfoil')
+    # 2. Blueprint queried
+    expected_filter = "PartitionKey eq 'SET' and name eq 'Test NonFoil'"
+    mock_blueprints_client.query_entities.assert_called_once_with(query_filter=expected_filter, select=['id'])
     # 3. API called with correct params for nonfoil
     expected_params = {'blueprint_id': 1001, 'language': 'fr', 'foil': 'false'}
     mock_requests_session.get.assert_called_once_with(CARDTRADER_MARKETPLACE_URL, params=expected_params, timeout=10)
@@ -403,17 +418,19 @@ def test_blueprint_not_found(mock_table_service_client, mock_requests_session, m
     mock_user_client = mock_table_service_client.get_table_client(user_table_name)
     card_entity = create_card_entity('NOS', 'ET_en_nonfoil', name="No Blueprint Card", stock=True)
     mock_user_client.list_entities.return_value = [card_entity]
-    # Setup: Blueprint table get_entity raises ResourceNotFoundError
+    # Setup: Blueprint table query returns empty list
     mock_blueprints_client = mock_table_service_client.get_table_client(BLUEPRINTS_TABLE_NAME)
-    mock_blueprints_client.get_entity.side_effect = ResourceNotFoundError("Blueprint not found")
+    mock_blueprints_client.query_entities.return_value = [] # Simulate not found
 
     # Execute
     with caplog.at_level(logging.WARNING):
         checkCardtraderStock_main(mock_timer)
 
     # Assertions
-    # 1. Log message indicates blueprint not found
-    assert f"Blueprint not found for card No Blueprint Card (NOS/ET_en_nonfoil). Setting stock to False." in caplog.text
+    # 1. Log message indicates blueprint not found via query
+    expected_filter = "PartitionKey eq 'NOS' and name eq 'No Blueprint Card'"
+    mock_blueprints_client.query_entities.assert_called_once_with(query_filter=expected_filter, select=['id'])
+    assert f"Blueprint not found for card No Blueprint Card (NOS) using name query. Setting stock to False." in caplog.text
     # 2. API was NOT called
     mock_requests_session.get.assert_not_called()
     # 3. User card entity was updated (stock changed from True to False)
@@ -443,11 +460,18 @@ def test_rate_limiting(mock_table_service_client, mock_requests_session, mock_ti
     card1 = create_card_entity('SET1', '001_en_nonfoil', name="Card 1")
     card2 = create_card_entity('SET1', '002_en_foil', name="Card 2", finish="foil")
     mock_user_client.list_entities.return_value = [card1, card2]
-    # Setup: Blueprints table
+    # Setup: Blueprints table query returns blueprints
     mock_blueprints_client = mock_table_service_client.get_table_client(BLUEPRINTS_TABLE_NAME)
     blueprint1 = TableEntity({'id': 111})
     blueprint2 = TableEntity({'id': 222})
-    mock_blueprints_client.get_entity.side_effect = [blueprint1, blueprint2] # Return in order
+    def query_side_effect(*args, **kwargs):
+        query_filter = kwargs.get('query_filter', '')
+        if "PartitionKey eq 'SET1'" in query_filter and "name eq 'Card 1'" in query_filter:
+            return [blueprint1]
+        if "PartitionKey eq 'SET1'" in query_filter and "name eq 'Card 2'" in query_filter:
+            return [blueprint2]
+        return []
+    mock_blueprints_client.query_entities.side_effect = query_side_effect
     # Setup: API responses (both OOS - empty list)
     mock_response = MagicMock(status_code=200, url="mock://cardtrader/multi")
     mock_response.json.return_value = []
@@ -465,7 +489,7 @@ def test_rate_limiting(mock_table_service_client, mock_requests_session, mock_ti
     # Check the approximate wait time (should be close to RATE_LIMIT_SECONDS)
     # Note: This depends on the mock_time fixture's side_effect timing
     # sleep_call_args = mock_time['sleep'].call_args[0][0]
-    # assert sleep_call_args == pytest.approx(RATE_LIMIT_SECONDS - 0.1, abs=0.05) # Example check
+    # assert sleep_call_args == pytest.approx(RATE_LIMIT_SECONDS - 0.1, abs=0.05) # Example check based on mock_time timing
     assert "Rate limiting: waiting" in caplog.text
     # 3. No stock updates occurred (both cards were OOS and started as OOS)
     mock_user_client.update_entity.assert_not_called()

@@ -209,31 +209,59 @@ def main(timer: func.TimerRequest) -> None:
             continue
 
         blueprint_id = None
+        blueprint_entity = None
+        blueprint_id = None
         try:
-            # a. Find blueprint ID
-            # Assuming blueprint table uses same PK/RK structure for lookup
-            blueprint_entity = blueprints_table_client.get_entity(partition_key=card_pk, row_key=card_rk)
-            blueprint_id = blueprint_entity.get('id') # Cardtrader blueprint ID is stored in 'id' field
-            if not blueprint_id:
-                 logging.warning(f"Blueprint found for {card_name} ({card_pk}/{card_rk}) but 'id' field is missing or empty.")
+            # a. Find blueprint ID by querying using PartitionKey (set_code) and name
+            # Escape single quotes in card name for the query filter
+            escaped_card_name = card_name.replace("'", "''")
+            query_filter = f"PartitionKey eq '{card_pk}' and name eq '{escaped_card_name}'"
+            logging.debug(f"Querying blueprints table with filter: {query_filter}")
+            
+            results = list(blueprints_table_client.query_entities(query_filter=query_filter, select=["id"])) # Select only the 'id' field
+            
+            if len(results) == 1:
+                blueprint_entity = results[0]
+                blueprint_id = blueprint_entity.get('id')
+                if not blueprint_id:
+                    logging.warning(f"Blueprint found for {card_name} ({card_pk}) but 'id' field is missing or empty.")
+            elif len(results) > 1:
+                logging.warning(f"Multiple blueprints found for {card_name} ({card_pk}). Using the first result.")
+                blueprint_entity = results[0] # Take the first one for now
+                blueprint_id = blueprint_entity.get('id')
+                if not blueprint_id:
+                     logging.warning(f"First blueprint result for {card_name} ({card_pk}) has missing or empty 'id' field.")
+            else: # len(results) == 0
+                 logging.warning(f"Blueprint not found for card {card_name} ({card_pk}) using name query. Setting stock to False.")
+                 # Update stock to False if blueprint doesn't exist
+                 if card.get('cardtrader_stock') is not False:
+                     card['cardtrader_stock'] = False
+                     try:
+                         user_table_client.update_entity(entity=card, mode=UpdateMode.MERGE)
+                         updated_count += 1
+                     except Exception as update_e:
+                         logging.error(f"Failed to update stock (to False) for missing blueprint {card_name} ({card_pk}/{card_rk}): {update_e}")
+                 continue # Move to next card
 
-        except ResourceNotFoundError:
-            logging.warning(f"Blueprint not found for card {card_name} ({card_pk}/{card_rk}). Setting stock to False.")
-            # Update stock to False if blueprint doesn't exist
-            if card.get('cardtrader_stock') is not False:
-                card['cardtrader_stock'] = False
+        except Exception as bp_e:
+            logging.error(f"Error querying blueprint for {card_name} ({card_pk}/{card_rk}): {bp_e}")
+            # Update stock to False on blueprint query error? Or just skip? Let's skip for now.
+            # If needed, add stock update logic here similar to the 'not found' case.
+            continue # Skip this card on blueprint query error
+
+        # b. If blueprint ID found, check stock via API
+        # (No ResourceNotFoundError expected here anymore, handled by query result check)
+        # except Exception as bp_e: <--- This block is removed as it's covered above
+        #     logging.error(f"Error fetching blueprint for {card_name} ({card_pk}/{card_rk}): {bp_e}")
+        #     continue # Skip this card on blueprint error
+
+        # b. If blueprint ID found, check stock via API
                 try:
                     user_table_client.update_entity(entity=card, mode=UpdateMode.MERGE)
                     updated_count += 1
                 except Exception as update_e:
                     logging.error(f"Failed to update stock (to False) for missing blueprint {card_name} ({card_pk}/{card_rk}): {update_e}")
-            continue # Move to next card
-        except Exception as bp_e:
-            logging.error(f"Error fetching blueprint for {card_name} ({card_pk}/{card_rk}): {bp_e}")
-            continue # Skip this card on blueprint error
-
-        # b. If blueprint ID found, check stock via API
-        if blueprint_id:
+        if blueprint_id: # Proceed only if a blueprint ID was successfully found
             try:
                 # i. Rate limit
                 current_time = time.time()
