@@ -91,7 +91,25 @@ def main(timer: func.TimerRequest) -> None:
     # 5. Query TIMESTAMPS_TABLE_NAME for these users
     # 6. Determine next user table to check based on CHECK_INTERVAL_HOURS and oldest timestamp
     # 7. If no user table needs checking, log and return
-    # 8. Get user's table client (USER_TABLE_PREFIX + user_id)
+    # --- Placeholder for user selection logic ---
+    # This part needs implementation: find the user_table_name to process
+    user_table_to_check = None # Replace with actual logic
+    user_id_to_check = None # Extract user ID from table name if needed
+
+    if not user_table_to_check:
+         logging.info("No users require checking at this time.")
+         return
+
+    logging.info(f"Selected user table to check: {user_table_to_check}")
+    # --- End Placeholder ---
+
+    # 8. Get user's table client
+    try:
+        user_table_client = table_service_client.get_table_client(user_table_to_check)
+    except Exception as e:
+        logging.error(f"Failed to get table client for {user_table_to_check}: {e}")
+        return # Or handle differently, maybe try next user?
+
     # 9. Query all cards from user's table
     # 10. Initialize Cardtrader session
     # 11. Loop through cards:
