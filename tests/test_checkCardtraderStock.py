@@ -195,6 +195,7 @@ def test_user_never_checked_card_in_stock(mock_table_service_client, mock_reques
     # Mock query_entities to return the blueprint when the filter matches
     def query_side_effect(*args, **kwargs):
         query_filter = kwargs.get('query_filter', '')
+        # Use the potentially mapped set code 'SET' (no mapping needed in this case)
         if "PartitionKey eq 'SET'" in query_filter and "name eq 'Test Foil'" in query_filter:
             return [blueprint_entity]
         return []
@@ -212,7 +213,7 @@ def test_user_never_checked_card_in_stock(mock_table_service_client, mock_reques
     # Assertions
     # 1. Correct user selected
     assert f"Selected user table to check: {user_table_name}" in caplog.text
-    # 2. Blueprint was queried
+    # 2. Blueprint was queried with correct (unmapped) set code
     expected_filter = "PartitionKey eq 'SET' and name eq 'Test Foil'"
     mock_blueprints_client.query_entities.assert_called_once_with(query_filter=expected_filter, select=['id'])
     # 3. Rate limit sleep was NOT called (first API call)
@@ -312,6 +313,7 @@ def test_user_checked_long_ago_card_oos(mock_table_service_client, mock_requests
     blueprint_entity = TableEntity({'id': 1001})
     def query_side_effect(*args, **kwargs):
         query_filter = kwargs.get('query_filter', '')
+        # Use the potentially mapped set code 'SET' (no mapping needed)
         # Note: Need to handle escaped quotes if card names have them. Test NonFoil doesn't.
         if "PartitionKey eq 'SET'" in query_filter and "name eq 'Test NonFoil'" in query_filter:
             return [blueprint_entity]
@@ -330,7 +332,7 @@ def test_user_checked_long_ago_card_oos(mock_table_service_client, mock_requests
     # Assertions
     # 1. Correct user selected
     assert f"Selected user table to check: {user_table_name}" in caplog.text
-    # 2. Blueprint queried
+    # 2. Blueprint queried with correct (unmapped) set code
     expected_filter = "PartitionKey eq 'SET' and name eq 'Test NonFoil'"
     mock_blueprints_client.query_entities.assert_called_once_with(query_filter=expected_filter, select=['id'])
     # 3. API called with correct params for nonfoil
@@ -427,7 +429,7 @@ def test_blueprint_not_found(mock_table_service_client, mock_requests_session, m
         checkCardtraderStock_main(mock_timer)
 
     # Assertions
-    # 1. Log message indicates blueprint not found via query
+    # 1. Log message indicates blueprint not found via query with correct (unmapped) set code
     expected_filter = "PartitionKey eq 'NOS' and name eq 'No Blueprint Card'"
     mock_blueprints_client.query_entities.assert_called_once_with(query_filter=expected_filter, select=['id'])
     assert f"Blueprint not found for card No Blueprint Card (NOS) using name query. Setting stock to False." in caplog.text
@@ -466,6 +468,7 @@ def test_rate_limiting(mock_table_service_client, mock_requests_session, mock_ti
     blueprint2 = TableEntity({'id': 222})
     def query_side_effect(*args, **kwargs):
         query_filter = kwargs.get('query_filter', '')
+        # Use the potentially mapped set code 'SET1' (no mapping needed)
         if "PartitionKey eq 'SET1'" in query_filter and "name eq 'Card 1'" in query_filter:
             return [blueprint1]
         if "PartitionKey eq 'SET1'" in query_filter and "name eq 'Card 2'" in query_filter:
@@ -510,3 +513,4 @@ def test_rate_limiting(mock_table_service_client, mock_requests_session, mock_ti
 # - test_blueprint_missing_id (should log warning, continue with None id, likely fail API call or set stock=False)
 # - test_multiple_blueprints_found (query returns >1, should log warning, use first)
 # - test_query_filter_escaping (card name with single quote)
+# - test_set_code_mapping (e.g., '4bb' -> '4ebb')

@@ -213,11 +213,17 @@ def main(timer: func.TimerRequest) -> None:
         blueprint_id = None
         try:
             # a. Find blueprint ID by querying using PartitionKey (set_code) and name
+            
+            # Apply set code mapping if necessary
+            blueprint_set_code = SCRYFALL_TO_CARDTRADER_SET_MAP.get(card_pk, card_pk)
+            if blueprint_set_code != card_pk:
+                logging.debug(f"Mapped Scryfall set code '{card_pk}' to Cardtrader set code '{blueprint_set_code}' for blueprint query.")
+
             # Escape single quotes in card name for the query filter
             escaped_card_name = card_name.replace("'", "''")
-            query_filter = f"PartitionKey eq '{card_pk}' and name eq '{escaped_card_name}'"
+            query_filter = f"PartitionKey eq '{blueprint_set_code}' and name eq '{escaped_card_name}'"
             logging.debug(f"Querying blueprints table with filter: {query_filter}")
-            
+
             results = list(blueprints_table_client.query_entities(query_filter=query_filter, select=["id"])) # Select only the 'id' field
             
             if len(results) == 1:
