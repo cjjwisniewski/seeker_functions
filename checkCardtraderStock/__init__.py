@@ -268,11 +268,6 @@ def main(timer: func.TimerRequest) -> None:
         #     continue # Skip this card on blueprint error
 
         # b. If blueprint ID found, check stock via API
-                try:
-                    user_table_client.update_entity(entity=card, mode=UpdateMode.MERGE)
-                    updated_count += 1
-                except Exception as update_e:
-                    logging.error(f"Failed to update stock (to False) for missing blueprint {card_name} ({card_pk}/{card_rk}): {update_e}")
         if blueprint_id: # Proceed only if a blueprint ID was successfully found
             try:
                 # i. Rate limit
