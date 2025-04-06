@@ -24,9 +24,9 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         
         user_tables = []
         
-        # List all tables and filter for those starting with 'user'
+        # List all tables and filter for those starting with 'user', excluding specific tables
         for table in table_service.list_tables():
-            if table.name.startswith('user'):
+            if table.name.startswith('user') and table.name != 'userCheckTimestamps':
                 table_client = table_service.get_table_client(table.name)
                 # Count items in table
                 count = sum(1 for _ in table_client.list_entities())

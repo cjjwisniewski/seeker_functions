@@ -68,7 +68,8 @@ def test_get_user_tables_success_multiple(mock_table_service_client):
     table_list = [
         TableItem({'name': 'user123'}),
         TableItem({'name': 'user456'}),
-        TableItem({'name': 'systemTable'}), # Should be ignored
+        TableItem({'name': 'systemTable'}), # Should be ignored by startswith('user')
+        TableItem({'name': 'userCheckTimestamps'}), # Should be ignored by specific check
         TableItem({'name': 'user789'}),
     ]
     mock_table_service_client.list_tables.return_value = iter(table_list)
@@ -92,6 +93,9 @@ def test_get_user_tables_success_multiple(mock_table_service_client):
     mock_table_service_client.get_table_client.assert_any_call('user123')
     mock_table_service_client.get_table_client.assert_any_call('user456')
     mock_table_service_client.get_table_client.assert_any_call('user789')
+    # Ensure userCheckTimestamps was NOT requested
+    assert 'userCheckTimestamps' not in [call.args[0] for call in mock_table_service_client.get_table_client.call_args_list]
+
     # Check list_entities calls for counts
     mock_client_123.list_entities.assert_called_once()
     mock_client_456.list_entities.assert_called_once()
