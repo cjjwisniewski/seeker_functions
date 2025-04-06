@@ -1,11 +1,11 @@
 import pytest
 import datetime
 import time
-import logging # <-- Added import
+import logging
 from unittest.mock import patch, MagicMock, call, ANY
 import azure.functions as func
 import pytz
-from azure.data.tables import TableServiceClient, TableClient, TableEntity, UpdateMode # <-- Added UpdateMode
+from azure.data.tables import TableServiceClient, TableClient, TableEntity, UpdateMode
 from azure.core.exceptions import ResourceNotFoundError, HttpResponseError
 
 # Import the function to test
