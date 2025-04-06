@@ -279,12 +279,19 @@ def main(timer: func.TimerRequest) -> None:
                     time.sleep(wait_time)
 
                 # ii. Call Cardtrader API with query parameters
-                target_language = card.get('language', '').lower() # Get target language from our entity
+                target_language_original = card.get('language', '').lower() # Get target language from our entity
                 target_finish = card.get('finish', '').lower() # Get target finish from our entity
 
+                # Language mapping for Cardtrader API
+                language_map = {
+                    'zhs': 'zh-CN',
+                    'zht': 'zh-TW'
+                }
+                target_language_api = language_map.get(target_language_original, target_language_original)
+
                 api_params = {'blueprint_id': blueprint_id}
-                if target_language:
-                    api_params['language'] = target_language
+                if target_language_api: # Use the potentially mapped language code
+                    api_params['language'] = target_language_api
                 if target_finish == 'foil':
                     api_params['foil'] = 'true'
                 elif target_finish == 'nonfoil':
