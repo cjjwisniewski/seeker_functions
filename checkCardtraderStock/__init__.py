@@ -248,15 +248,23 @@ def main(timer: func.TimerRequest) -> None:
                 if not blueprint_id:
                      logging.warning(f"First blueprint result for {card_name} ({card_pk}) has missing or empty 'id' field.")
             else: # len(results) == 0
-                 logging.warning(f"Blueprint not found for card {card_name} ({card_pk}) using name query. Setting stock to False.")
-                 # Update stock to False if blueprint doesn't exist
+                 logging.warning(f"Blueprint not found for card {card_name} ({card_pk}) using name query. Setting stock to False and price to None.")
+                 # Update stock to False and price to None if blueprint doesn't exist
+                 needs_update = False
                  if card.get('cardtrader_stock') is not False:
                      card['cardtrader_stock'] = False
+                     needs_update = True
+                 if card.get('cardtrader_low_price') is not None:
+                     card['cardtrader_low_price'] = None
+                     needs_update = True
+
+                 if needs_update:
                      try:
                          user_table_client.update_entity(entity=card, mode=UpdateMode.MERGE)
+                         logging.info(f"Updated missing blueprint {card_name} ({card_pk}/{card_rk}) to stock=False, price=None.")
                          updated_count += 1
                      except Exception as update_e:
-                         logging.error(f"Failed to update stock (to False) for missing blueprint {card_name} ({card_pk}/{card_rk}): {update_e}")
+                         logging.error(f"Failed to update stock/price for missing blueprint {card_name} ({card_pk}/{card_rk}): {update_e}")
                  continue # Move to next card
 
         except Exception as bp_e:
@@ -319,9 +327,9 @@ def main(timer: func.TimerRequest) -> None:
 
                 # iii. Parse response
                 stock_status = False
+                low_price = None # Initialize low_price for this card check
                 if response.status_code == 200:
-                    # Check if the response body indicates stock.
-                    # This depends heavily on the API response structure.
+                    # Check if the response body indicates stock and find lowest price.
                     # Example: Check if the response list is non-empty.
                     # API filters results based on query params (language, foil).
                     # We just need to check if the result list is non-empty.
@@ -330,40 +338,61 @@ def main(timer: func.TimerRequest) -> None:
                         # The API returns an object with blueprint_id as key and an array of listings as value
                         # Example for in-stock: {"42024":[{listing1}, {listing2}]}
                         # Example for out-of-stock: {"33922":[]}
-                        str_blueprint_id = str(blueprint_id)  # Convert to string
-                        if str_blueprint_id in data and isinstance(data[str_blueprint_id], list) and len(data[str_blueprint_id]) > 0:
+                        str_blueprint_id = str(blueprint_id)
+                        items = data.get(str_blueprint_id)
+
+                        if isinstance(items, list) and len(items) > 0:
                             stock_status = True
+                            # Find the lowest price in cents
+                            min_price_cents = min(item['price_cents'] for item in items if 'price_cents' in item)
+                            low_price = min_price_cents # Store as integer (cents)
+                            logging.info(f"API success for blueprint {blueprint_id} with params {api_params}. Stock found: {stock_status}, Lowest Price (cents): {low_price}")
                         else:
+                            # Stock is false if key exists but list is empty, or key doesn't exist
                             stock_status = False
-                        logging.info(f"API success for blueprint {blueprint_id} with params {api_params}. Stock found: {stock_status}")
+                            low_price = None
+                            logging.info(f"API success for blueprint {blueprint_id} with params {api_params}. Stock found: {stock_status} (Empty list or key missing)")
 
                     except ValueError: # Includes JSONDecodeError
                          logging.error(f"Failed to decode JSON response for blueprint {blueprint_id} with params {api_params}. URL: {response.url}, Status: {response.status_code}")
-                         stock_status = False # Treat decode error as out of stock
+                         stock_status = False
+                         low_price = None
                     except Exception as parse_e:
                          logging.error(f"Error processing Cardtrader response for blueprint {blueprint_id} with params {api_params}: {parse_e}")
-                         stock_status = False # Treat parsing error as out of stock
+                         stock_status = False
+                         low_price = None
                 elif response.status_code == 404:
                      # 404 likely means no items match the specific query (blueprint_id + lang + foil)
                      logging.info(f"Cardtrader API returned 404 (Not Found) for blueprint {blueprint_id} with params {api_params}. Assuming out of stock. URL: {response.url}")
-                     stock_status = False # Treat 404 as out of stock
+                     stock_status = False
+                     low_price = None
                 elif response.status_code == 429:
                     logging.error(f"Cardtrader API rate limit hit (429) for blueprint {blueprint_id} with params {api_params}. Stopping check for this user.")
                     # Optionally break the loop or implement backoff
                     break # Stop processing this user for now
                 else:
                     logging.error(f"Cardtrader API error for blueprint {blueprint_id} with params {api_params}. Status: {response.status_code}, Response: {response.text[:200]}")
-                    stock_status = False # Treat other errors as out of stock
+                    stock_status = False
+                    low_price = None # Ensure price is None on error
 
-                # iv. Update card entity if status changed
-                if card.get('cardtrader_stock') != stock_status:
+                # iv. Update card entity if status or price changed
+                current_stock = card.get('cardtrader_stock')
+                current_price = card.get('cardtrader_low_price') # Can be None
+
+                # Ensure low_price from API is int or None for comparison
+                # Azure Table Storage might return price as float if previously stored that way, handle it.
+                if isinstance(current_price, float):
+                    current_price = int(current_price) # Convert potential float from storage to int
+
+                if current_stock != stock_status or current_price != low_price:
                     card['cardtrader_stock'] = stock_status
+                    card['cardtrader_low_price'] = low_price # Store as int (cents) or None
                     try:
                         user_table_client.update_entity(entity=card, mode=UpdateMode.MERGE)
-                        logging.info(f"Updated stock for {card_name} ({card_pk}/{card_rk}) to {stock_status}")
+                        logging.info(f"Updated card {card_name} ({card_pk}/{card_rk}) to stock={stock_status}, price={low_price}")
                         updated_count += 1
                     except Exception as update_e:
-                         logging.error(f"Failed to update stock for {card_name} ({card_pk}/{card_rk}): {update_e}")
+                         logging.error(f"Failed to update stock/price for {card_name} ({card_pk}/{card_rk}): {update_e}")
 
             except requests.exceptions.RequestException as req_e:
                 logging.error(f"Network error calling Cardtrader API for blueprint {blueprint_id} with params {api_params}: {req_e}")
