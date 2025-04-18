@@ -174,3 +174,4 @@ cython_debug/
 .pypirc
 
 local.settings.json
+.aider*
