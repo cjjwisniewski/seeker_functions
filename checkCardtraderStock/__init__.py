@@ -248,21 +248,46 @@ def main(timer: func.TimerRequest) -> None:
                 if not blueprint_id:
                      logging.warning(f"First blueprint result for {card_name} ({card_pk}) has missing or empty 'id' field.")
             else: # len(results) == 0
-                 logging.warning(f"Blueprint not found for card {card_name} ({card_pk}) using name query. Setting stock=False, price=None, cardtrader_id=None.")
-                 # Update stock, price, and cardtrader_id if blueprint doesn't exist
-                 needs_update = False
-                 if card.get('cardtrader_stock') is not False:
-                     card['cardtrader_stock'] = False
-                     needs_update = True
-                 if card.get('cardtrader_low_price') is not None:
-                     card['cardtrader_low_price'] = None
-                     needs_update = True
-                 if card.get('cardtrader_id') is not None: # Check if cardtrader_id needs to be cleared
-                     card['cardtrader_id'] = None
-                     needs_update = True
+                         logging.warning(f"Blueprint not found for card {card_name} ({card_pk}) using name query. Setting stock=False, price=None, cardtrader_id=None.")
+                         # Check if an update is needed compared to original values
+                         needs_update = (
+                             original_stock is not False or
+                             original_price is not None or
+                             original_cardtrader_id is not None # Check if original ID needs clearing
+                         )
 
-                 if needs_update:
-                     try:
+                         if needs_update:
+                             # Prepare the update payload
+                             update_payload = {
+                                 'PartitionKey': card_pk,
+                                 'RowKey': card_rk,
+                                 'cardtrader_stock': False,
+                                 'cardtrader_low_price': None,
+                                 'cardtrader_id': None
+                             }
+                             try:
+                                 # Use the explicit payload for clarity
+                                 user_table_client.update_entity(entity=update_payload, mode=UpdateMode.MERGE)
+                                 logging.info(f"Updated missing blueprint {card_name} ({card_pk}/{card_rk}) to stock=False, price=None, cardtrader_id=None.")
+                                 updated_count += 1
+                             except Exception as update_e:
+                                 logging.error(f"Failed to update stock/price/id for missing blueprint {card_name} ({card_pk}/{card_rk}): {update_e}")
+                         continue # Move to next card
+
+                except Exception as bp_e:
+                    logging.error(f"Error querying blueprint for {card_name} ({card_pk}/{card_rk}): {bp_e}")
+                    # Update stock to False on blueprint query error? Or just skip? Let's skip for now.
+                    # If needed, add stock update logic here similar to the 'not found' case.
+                    continue # Skip this card on blueprint query error
+
+                # b. If blueprint ID found, check stock via API
+                if blueprint_id: # Proceed only if a blueprint ID was successfully found
+                    # NOTE: We do NOT modify the 'card' dictionary here yet.
+                    # We will compare the found blueprint_id with original_cardtrader_id later.
+
+                    try:
+                        # i. Rate limit
+                        current_time = time.time()
                          user_table_client.update_entity(entity=card, mode=UpdateMode.MERGE)
                          logging.info(f"Updated missing blueprint {card_name} ({card_pk}/{card_rk}) to stock=False, price=None, cardtrader_id=None.")
                          updated_count += 1
@@ -278,17 +303,46 @@ def main(timer: func.TimerRequest) -> None:
 
         # b. If blueprint ID found, check stock via API
         # (No ResourceNotFoundError expected here anymore, handled by query result check)
-        # except Exception as bp_e: <--- This block is removed as it's covered above
-        #     logging.error(f"Error fetching blueprint for {card_name} ({card_pk}/{card_rk}): {bp_e}")
-        #     continue # Skip this card on blueprint error
+        # except Exception as bp_e: ... (This block was already correctly removed)
 
-        # b. If blueprint ID found, store it and check stock via API
-        if blueprint_id: # Proceed only if a blueprint ID was successfully found
-            # Store the found blueprint ID in the card entity
-            card['cardtrader_id'] = blueprint_id
+        # --- The following section is now part of the 'if blueprint_id:' block above ---
+        # # b. If blueprint ID found, store it and check stock via API
+        # if blueprint_id: # Proceed only if a blueprint ID was successfully found
+        #     # Store the found blueprint ID in the card entity
+        #     card['cardtrader_id'] = blueprint_id # <<< This was the problematic line, moved below
+        #
+        #     try:
+        #         # i. Rate limit
+        # --- End of section moved ---
 
-            try:
-                # i. Rate limit
+                # ... (Keep Rate limit, API call, Response parsing logic as is) ...
+
+                # iv. Update card entity if status or price changed
+                current_stock = card.get('cardtrader_stock')
+                current_price = card.get('cardtrader_low_price') # Can be None
+                current_blueprint_id = card.get('cardtrader_id') # Get current ID (might be None if just added)
+
+                # Ensure low_price from API is int or None for comparison
+                # Azure Table Storage might return price as float if previously stored that way, handle it.
+                if isinstance(current_price, float):
+                    current_price = int(current_price) # Convert potential float from storage to int
+
+                # Check if stock, price, OR blueprint ID needs updating
+                needs_update = (
+                    current_stock != stock_status or
+                    current_price != low_price or
+                    current_blueprint_id != blueprint_id # Compare stored ID with the one we just found/confirmed
+                )
+
+                if needs_update:
+                    card['cardtrader_stock'] = stock_status
+                    card['cardtrader_low_price'] = low_price # Store as int (cents) or None
+                    card['cardtrader_id'] = blueprint_id # Ensure the ID is explicitly part of the update payload
+                    try:
+                        # Pass the modified card dictionary which now explicitly includes the latest id, stock, and price
+                        user_table_client.update_entity(entity=card, mode=UpdateMode.MERGE)
+                        logging.info(f"Updated card {card_name} ({card_pk}/{card_rk}) to stock={stock_status}, price={low_price}, cardtrader_id={blueprint_id}")
+                        updated_count += 1
                 current_time = time.time()
                 time_since_last_call = current_time - last_api_call_time
                 if time_since_last_call < RATE_LIMIT_SECONDS:
@@ -411,7 +465,7 @@ def main(timer: func.TimerRequest) -> None:
                          logging.error(f"Failed to update stock/price/id for {card_name} ({card_pk}/{card_rk}): {update_e}")
                 else:
                     # Log if no update was performed because data hasn't changed
-                    logging.debug(f"No update needed for card {card_name} ({card_pk}/{card_rk}). Stock ({stock_status}), price ({low_price}), and ID ({blueprint_id}) match stored values.")
+                    logging.debug(f"No update needed for card {card_name} ({card_pk}/{card_rk}). Stock ({stock_status}), price ({low_price}), and ID ({blueprint_id}) match original stored values.")
 
             except requests.exceptions.RequestException as req_e:
                 logging.error(f"Network error calling Cardtrader API for blueprint {blueprint_id} with params {api_params}: {req_e}")
