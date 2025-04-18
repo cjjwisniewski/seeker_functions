@@ -34,10 +34,14 @@ def get_cardtrader_session():
         raise ValueError("CARDTRADER_API_KEY environment variable not set.")
     
     session = requests.Session()
+    # --- Add a common browser User-Agent ---
+    browser_user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36' # Example Chrome UA
     session.headers.update({
         'Authorization': f'Bearer {CARDTRADER_API_KEY}',
-        'Accept': 'application/json'
+        'Accept': 'application/json',
+        'User-Agent': browser_user_agent # Set the User-Agent here
     })
+    # --- End modification ---
     return session
 
 def get_user_id_from_table_name(table_name):
@@ -302,10 +306,18 @@ def main(timer: func.TimerRequest) -> None:
                      api_params['foil'] = 'false'
                 # Add handling for other finishes like 'etched' if the API supports specific parameters for them
 
-                logging.debug(f"Calling Cardtrader API: {CARDTRADER_MARKETPLACE_URL} with params: {api_params}")
+                logging.info(f"Attempting API call for BP {blueprint_id}. URL: {CARDTRADER_MARKETPLACE_URL}, Params: {api_params}, Headers: {ct_session.headers}") # Log headers too
                 response = ct_session.get(CARDTRADER_MARKETPLACE_URL, params=api_params, timeout=10) # Add timeout
                 last_api_call_time = time.time()
                 api_call_count += 1
+
+                # Log the raw response details immediately after
+                logging.info(f"API Response Status for BP {blueprint_id}: {response.status_code}")
+                try:
+                    # Log first 500 chars of text, careful with potentially large responses
+                    logging.info(f"API Response Text for BP {blueprint_id}: {response.text[:500]}")
+                except Exception as log_ex:
+                    logging.error(f"Error logging response text for BP {blueprint_id}: {log_ex}")
 
                 # iii. Parse response
                 stock_status = False
