@@ -118,34 +118,55 @@ def main(timer: func.TimerRequest) -> None:
             logging.info(f"No cards currently marked in stock for user {user_id}. No digest sent.")
             continue
 
-        # Construct Discord message
-        # Discord messages have a 2000 character limit. Be mindful.
-        message_content = f"<@{user_id}> Stock Alert! Found {len(in_stock_cards)} item(s) in stock:\n"
-        message_lines = []
+        # Construct Discord Embed message
+        # Embeds have limits: 25 fields, ~6000 chars total.
+        user_ping = f"<@{user_id}>" # Keep ping outside the embed
+        embed_fields = []
+        max_fields = 25
 
-        for card in in_stock_cards:
-            # Format: Name (Set #Num) [Lang/Finish] - Marketplaces: [List]
-            line = (
-                f"- **{card['name']}** ({card['set_code'].upper()} #{card['collector_number']}) "
-                f"[{card['language']}/{card['finish']}] - "
+        for i, card in enumerate(in_stock_cards):
+            if len(embed_fields) >= max_fields -1: # Leave space for a potential truncation message field
+                 embed_fields.append({
+                     "name": "...",
+                     "value": f"Message truncated. {len(in_stock_cards) - i} more items not shown.",
+                     "inline": False
+                 })
+                 logging.warning(f"Stock digest embed for user {user_id} truncated due to field limit.")
+                 break
+
+            # Field Name: Card Name (Set #Num)
+            field_name = f"{card['name']} ({card['set_code'].upper()} #{card['collector_number']})"
+            # Field Value: [Lang/Finish] - Marketplaces: [List]
+            field_value = (
+                f"[{card['language']}/{card['finish']}]\n"
                 f"Marketplaces: {card['marketplaces']}"
             )
-            # Check length before adding to prevent exceeding limit easily
-            if len(message_content) + len(line) + 1 < 1950: # Leave some buffer
-                 message_lines.append(line)
-            else:
-                 message_lines.append("- ... (message truncated)")
-                 logging.warning(f"Stock digest message for user {user_id} truncated due to length limit.")
-                 break # Stop adding lines
+            embed_fields.append({
+                "name": field_name[:256], # Field name limit
+                "value": field_value[:1024], # Field value limit
+                "inline": False # Display each card as a separate block
+            })
 
-        message_content += "\n".join(message_lines)
+
+        # Assemble the embed object
+        embed = {
+            "title": "Seeker Stock Alert!",
+            "description": f"Found {len(in_stock_cards)} item(s) in stock for you:",
+            "color": 0x00ff00, # Green color, feel free to change (decimal format)
+            "fields": embed_fields,
+            "timestamp": now_utc.isoformat() # Add a timestamp
+        }
 
         # Send to Discord Webhook
         try:
-            payload = {"content": message_content}
+            # Payload includes the user ping in 'content' and the embed structure in 'embeds'
+            payload = {
+                "content": user_ping,
+                "embeds": [embed] # Webhooks expect a list of embeds
+            }
             response = requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=10)
             response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
-            logging.info(f"Successfully sent stock digest to Discord for user {user_id}.")
+            logging.info(f"Successfully sent stock digest embed to Discord for user {user_id}.")
             digests_sent += 1
             # Optional: Add a small delay if sending many webhooks rapidly
             # time.sleep(1)
