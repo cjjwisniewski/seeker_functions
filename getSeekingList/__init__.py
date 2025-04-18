@@ -104,6 +104,11 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             'tcgplayer_stock': str(entity.get('tcgplayer_stock', 'unknown')).lower() == 'true',
             'cardmarket_stock': str(entity.get('cardmarket_stock', 'unknown')).lower() == 'true',
             'ebay_stock': str(entity.get('ebay_stock', 'unknown')).lower() == 'true',
+            # Retrieve low price columns, defaulting to None if they don't exist
+            'cardtrader_low_price': entity.get('cardtrader_low_price', None),
+            'tcgplayer_low_price': entity.get('tcgplayer_low_price', None),
+            'ebay_low_price': entity.get('ebay_low_price', None),
+            'cardmarket_low_price': entity.get('cardmarket_low_price', None),
         } for entity in entities]
 
         # Optional: Log retrieved card names for debugging
