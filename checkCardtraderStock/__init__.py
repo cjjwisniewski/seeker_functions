@@ -345,7 +345,7 @@ def main(timer: func.TimerRequest) -> None:
                 elif response.status_code == 404:
                      # 404 likely means no items match the specific query (blueprint_id + lang + foil)
                      logging.info(f"Cardtrader API returned 404 (Not Found) for blueprint {blueprint_id} with params {api_params}. Assuming out of stock. URL: {response.url}")
-                     stock_status = False # Treat 404 as out of stock
+                     stock_status = False # Treat 404 as out of stock for the specific version
                 elif response.status_code == 429:
                     logging.error(f"Cardtrader API rate limit hit (429) for blueprint {blueprint_id} with params {api_params}. Stopping check for this user.")
                     # Optionally break the loop or implement backoff
