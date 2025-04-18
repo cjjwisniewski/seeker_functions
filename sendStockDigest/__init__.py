@@ -159,11 +159,3 @@ def main(timer: func.TimerRequest) -> None:
     duration = end_time - start_time
     logging.info(f"sendStockDigest function finished. "
                  f"User tables processed: {user_tables_processed}, Digests sent: {digests_sent}. Duration: {duration:.2f} seconds.")
-
-```
-
-```json
-sendStockDigest/function.json
-<<<<<<< SEARCH
-# This file is needed for Azure Functions Python model v1 discovery.
-# The actual function code is in __init__.py
