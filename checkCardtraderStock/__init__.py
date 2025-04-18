@@ -290,27 +290,6 @@ def main(timer: func.TimerRequest) -> None:
 
         # b. If blueprint ID found, check stock via API
         if blueprint_id: # Proceed only if a blueprint ID was successfully found
-                    # NOTE: We do NOT modify the 'card' dictionary here yet.
-                    # We will compare the found blueprint_id with original_cardtrader_id later.
-
-                    try:
-                        # i. Rate limit
-                        current_time = time.time()
-                         user_table_client.update_entity(entity=card, mode=UpdateMode.MERGE)
-                         logging.info(f"Updated missing blueprint {card_name} ({card_pk}/{card_rk}) to stock=False, price=None, cardtrader_id=None.")
-                         updated_count += 1
-                     except Exception as update_e:
-                         logging.error(f"Failed to update stock/price/id for missing blueprint {card_name} ({card_pk}/{card_rk}): {update_e}")
-                 continue # Move to next card
-
-        except Exception as bp_e:
-            logging.error(f"Error querying blueprint for {card_name} ({card_pk}/{card_rk}): {bp_e}")
-            # Update stock to False on blueprint query error? Or just skip? Let's skip for now.
-            # If needed, add stock update logic here similar to the 'not found' case.
-            continue # Skip this card on blueprint query error
-
-        # b. If blueprint ID found, check stock via API
-        if blueprint_id: # Proceed only if a blueprint ID was successfully found
             # NOTE: We do NOT modify the 'card' dictionary here yet.
             # We will compare the found blueprint_id with original_cardtrader_id later.
 
