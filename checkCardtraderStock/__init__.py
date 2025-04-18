@@ -16,7 +16,7 @@ USER_TABLE_PREFIX = "user" # Prefix for user-specific tables
 # Cardtrader API settings - use environment variables
 CARDTRADER_API_KEY = os.environ.get("CARDTRADER_API_KEY")
 # Base URL for the marketplace endpoint
-CARDTRADER_MARKETPLACE_URL = "https://api.cardtrader.com/v2/marketplace/products"
+CARDTRADER_MARKETPLACE_URL = "https://api.cardtrader.com/api/v2/marketplace/products"
 
 # Configuration
 RATE_LIMIT_SECONDS = 1.1 # Slightly more than 1 second to be safe
@@ -34,12 +34,12 @@ def get_cardtrader_session():
         raise ValueError("CARDTRADER_API_KEY environment variable not set.")
     
     session = requests.Session()
-    # --- Add a common browser User-Agent ---
-    browser_user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36' # Example Chrome UA
+    # --- Use the PowerShell User-Agent ---
+    user_agent = 'Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.22621.4435' # Exact string from Invoke-RestMethod log
     session.headers.update({
         'Authorization': f'Bearer {CARDTRADER_API_KEY}',
-        'Accept': 'application/json',
-        'User-Agent': browser_user_agent # Set the User-Agent here
+        'Accept': 'application/json', # Keep this for now, as it's standard for JSON APIs
+        'User-Agent': user_agent # Set the PowerShell User-Agent
     })
     # --- End modification ---
     return session
@@ -283,41 +283,39 @@ def main(timer: func.TimerRequest) -> None:
                     time.sleep(wait_time)
 
                 # ii. Call Cardtrader API with query parameters
-                target_language_original = card.get('language', '').lower() # Get target language from our entity
-                target_finish = card.get('finish', '').lower() # Get target finish from our entity
-
-                # Language mapping for Cardtrader API
-                language_map = {
-                    'zhs': 'zh-CN',
-                    'zht': 'zh-TW'
-                }
+                target_language_original = card.get('language', '').lower()
+                target_finish = card.get('finish', '').lower()
+                language_map = {'zhs': 'zh-CN', 'zht': 'zh-TW'}
                 target_language_api = language_map.get(target_language_original, target_language_original)
-
                 api_params = {'blueprint_id': blueprint_id}
-                if target_language_api: # Use the potentially mapped language code
+                if target_language_api:
                     api_params['language'] = target_language_api
                 if target_finish == 'foil':
                     api_params['foil'] = 'true'
                 elif target_finish == 'nonfoil':
-                     # Assuming Cardtrader API supports foil=false for non-foil,
-                     # or defaults to non-foil if parameter is absent.
-                     # Check API docs if non-foil needs explicit handling.
-                     # For now, let's explicitly ask for non-foil if specified.
                      api_params['foil'] = 'false'
-                # Add handling for other finishes like 'etched' if the API supports specific parameters for them
 
-                logging.info(f"Attempting API call for BP {blueprint_id}. URL: {CARDTRADER_MARKETPLACE_URL}, Params: {api_params}, Headers: {ct_session.headers}") # Log headers too
-                response = ct_session.get(CARDTRADER_MARKETPLACE_URL, params=api_params, timeout=10) # Add timeout
+                # --- TEMPORARY TEST: Use requests.get directly ---
+                test_headers = {
+                    'Authorization': f'Bearer {CARDTRADER_API_KEY}',
+                    'Accept': 'application/json',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36'
+                    # Note: We are *not* explicitly setting Accept-Encoding or Connection here
+                }
+                logging.info(f"[TEST] Attempting direct API call for BP {blueprint_id}. URL: {CARDTRADER_MARKETPLACE_URL}, Params: {api_params}, Headers: {test_headers}")
+                response = requests.get(CARDTRADER_MARKETPLACE_URL, params=api_params, headers=test_headers, timeout=10)
+                # --- END TEMPORARY TEST ---
+
                 last_api_call_time = time.time()
                 api_call_count += 1
 
                 # Log the raw response details immediately after
                 logging.info(f"API Response Status for BP {blueprint_id}: {response.status_code}")
+                logging.info(f"Prepared Request URL by 'requests': {response.request.url}") # Log the prepared URL
                 try:
-                    # Log first 500 chars of text, careful with potentially large responses
                     logging.info(f"API Response Text for BP {blueprint_id}: {response.text[:500]}")
                 except Exception as log_ex:
-                    logging.error(f"Error logging response text for BP {blueprint_id}: {log_ex}")
+                     logging.error(f"Error logging response text for BP {blueprint_id}: {log_ex}")
 
                 # iii. Parse response
                 stock_status = False
@@ -329,12 +327,15 @@ def main(timer: func.TimerRequest) -> None:
                     # We just need to check if the result list is non-empty.
                     try:
                         data = response.json()
-                        # Assuming a non-empty list means stock is available for the specific version requested
-                        if isinstance(data, list) and len(data) > 0:
+                        # The API returns an object with blueprint_id as key and an array of listings as value
+                        # Example for in-stock: {"42024":[{listing1}, {listing2}]}
+                        # Example for out-of-stock: {"33922":[]}
+                        str_blueprint_id = str(blueprint_id)  # Convert to string
+                        if str_blueprint_id in data and isinstance(data[str_blueprint_id], list) and len(data[str_blueprint_id]) > 0:
                             stock_status = True
                         else:
                             stock_status = False
-                        logging.debug(f"API success for blueprint {blueprint_id} with params {api_params}. Stock found: {stock_status}")
+                        logging.info(f"API success for blueprint {blueprint_id} with params {api_params}. Stock found: {stock_status}")
 
                     except ValueError: # Includes JSONDecodeError
                          logging.error(f"Failed to decode JSON response for blueprint {blueprint_id} with params {api_params}. URL: {response.url}, Status: {response.status_code}")
@@ -345,7 +346,7 @@ def main(timer: func.TimerRequest) -> None:
                 elif response.status_code == 404:
                      # 404 likely means no items match the specific query (blueprint_id + lang + foil)
                      logging.info(f"Cardtrader API returned 404 (Not Found) for blueprint {blueprint_id} with params {api_params}. Assuming out of stock. URL: {response.url}")
-                     stock_status = False # Treat 404 as out of stock for the specific version
+                     stock_status = False # Treat 404 as out of stock
                 elif response.status_code == 429:
                     logging.error(f"Cardtrader API rate limit hit (429) for blueprint {blueprint_id} with params {api_params}. Stopping check for this user.")
                     # Optionally break the loop or implement backoff
