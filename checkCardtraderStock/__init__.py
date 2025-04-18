@@ -384,6 +384,7 @@ def main(timer: func.TimerRequest) -> None:
                 # iv. Update card entity if status or price changed
                 current_stock = card.get('cardtrader_stock')
                 current_price = card.get('cardtrader_low_price') # Can be None
+                current_blueprint_id = card.get('cardtrader_id') # Get current ID (might be None if just added)
 
                 # Ensure low_price from API is int or None for comparison
                 # Azure Table Storage might return price as float if previously stored that way, handle it.
