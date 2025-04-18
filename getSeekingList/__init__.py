@@ -99,6 +99,8 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             'language': entity.get('language', 'N/A'),
             'finish': entity.get('finish', 'N/A'),
             'image_uri': entity.get('image_uri', ''),
+            # Get individual card IDs for URL linking
+            'cardtrader_id': entity.get('cardtrader_id', ''),
             # Handle potential non-boolean string values if needed before comparing
             'cardtrader_stock': str(entity.get('cardtrader_stock', 'unknown')).lower() == 'true',
             'tcgplayer_stock': str(entity.get('tcgplayer_stock', 'unknown')).lower() == 'true',
