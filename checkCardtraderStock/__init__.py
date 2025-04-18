@@ -248,8 +248,8 @@ def main(timer: func.TimerRequest) -> None:
                 if not blueprint_id:
                      logging.warning(f"First blueprint result for {card_name} ({card_pk}) has missing or empty 'id' field.")
             else: # len(results) == 0
-                 logging.warning(f"Blueprint not found for card {card_name} ({card_pk}) using name query. Setting stock to False and price to None.")
-                 # Update stock to False and price to None if blueprint doesn't exist
+                 logging.warning(f"Blueprint not found for card {card_name} ({card_pk}) using name query. Setting stock=False, price=None, cardtrader_id=None.")
+                 # Update stock, price, and cardtrader_id if blueprint doesn't exist
                  needs_update = False
                  if card.get('cardtrader_stock') is not False:
                      card['cardtrader_stock'] = False
@@ -257,14 +257,17 @@ def main(timer: func.TimerRequest) -> None:
                  if card.get('cardtrader_low_price') is not None:
                      card['cardtrader_low_price'] = None
                      needs_update = True
+                 if card.get('cardtrader_id') is not None: # Check if cardtrader_id needs to be cleared
+                     card['cardtrader_id'] = None
+                     needs_update = True
 
                  if needs_update:
                      try:
                          user_table_client.update_entity(entity=card, mode=UpdateMode.MERGE)
-                         logging.info(f"Updated missing blueprint {card_name} ({card_pk}/{card_rk}) to stock=False, price=None.")
+                         logging.info(f"Updated missing blueprint {card_name} ({card_pk}/{card_rk}) to stock=False, price=None, cardtrader_id=None.")
                          updated_count += 1
                      except Exception as update_e:
-                         logging.error(f"Failed to update stock/price for missing blueprint {card_name} ({card_pk}/{card_rk}): {update_e}")
+                         logging.error(f"Failed to update stock/price/id for missing blueprint {card_name} ({card_pk}/{card_rk}): {update_e}")
                  continue # Move to next card
 
         except Exception as bp_e:
