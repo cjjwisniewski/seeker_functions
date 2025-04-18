@@ -408,6 +408,9 @@ def main(timer: func.TimerRequest) -> None:
                         updated_count += 1
                     except Exception as update_e:
                          logging.error(f"Failed to update stock/price/id for {card_name} ({card_pk}/{card_rk}): {update_e}")
+                else:
+                    # Log if no update was performed because data hasn't changed
+                    logging.debug(f"No update needed for card {card_name} ({card_pk}/{card_rk}). Stock ({stock_status}), price ({low_price}), and ID ({blueprint_id}) match stored values.")
 
             except requests.exceptions.RequestException as req_e:
                 logging.error(f"Network error calling Cardtrader API for blueprint {blueprint_id} with params {api_params}: {req_e}")
