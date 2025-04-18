@@ -401,8 +401,9 @@ def main(timer: func.TimerRequest) -> None:
                 if needs_update:
                     card['cardtrader_stock'] = stock_status
                     card['cardtrader_low_price'] = low_price # Store as int (cents) or None
-                    # card['cardtrader_id'] = blueprint_id # Already set above when blueprint_id was found
+                    card['cardtrader_id'] = blueprint_id # Ensure the ID is explicitly part of the update payload
                     try:
+                        # Pass the modified card dictionary which now explicitly includes the latest id, stock, and price
                         user_table_client.update_entity(entity=card, mode=UpdateMode.MERGE)
                         logging.info(f"Updated card {card_name} ({card_pk}/{card_rk}) to stock={stock_status}, price={low_price}, cardtrader_id={blueprint_id}")
                         updated_count += 1
