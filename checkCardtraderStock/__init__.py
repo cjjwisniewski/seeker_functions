@@ -279,8 +279,11 @@ def main(timer: func.TimerRequest) -> None:
         #     logging.error(f"Error fetching blueprint for {card_name} ({card_pk}/{card_rk}): {bp_e}")
         #     continue # Skip this card on blueprint error
 
-        # b. If blueprint ID found, check stock via API
+        # b. If blueprint ID found, store it and check stock via API
         if blueprint_id: # Proceed only if a blueprint ID was successfully found
+            # Store the found blueprint ID in the card entity
+            card['cardtrader_id'] = blueprint_id
+
             try:
                 # i. Rate limit
                 current_time = time.time()
@@ -384,15 +387,23 @@ def main(timer: func.TimerRequest) -> None:
                 if isinstance(current_price, float):
                     current_price = int(current_price) # Convert potential float from storage to int
 
-                if current_stock != stock_status or current_price != low_price:
+                # Check if stock, price, OR blueprint ID needs updating
+                needs_update = (
+                    current_stock != stock_status or
+                    current_price != low_price or
+                    current_blueprint_id != blueprint_id # Compare stored ID with the one we just found/confirmed
+                )
+
+                if needs_update:
                     card['cardtrader_stock'] = stock_status
                     card['cardtrader_low_price'] = low_price # Store as int (cents) or None
+                    # card['cardtrader_id'] = blueprint_id # Already set above when blueprint_id was found
                     try:
                         user_table_client.update_entity(entity=card, mode=UpdateMode.MERGE)
-                        logging.info(f"Updated card {card_name} ({card_pk}/{card_rk}) to stock={stock_status}, price={low_price}")
+                        logging.info(f"Updated card {card_name} ({card_pk}/{card_rk}) to stock={stock_status}, price={low_price}, cardtrader_id={blueprint_id}")
                         updated_count += 1
                     except Exception as update_e:
-                         logging.error(f"Failed to update stock/price for {card_name} ({card_pk}/{card_rk}): {update_e}")
+                         logging.error(f"Failed to update stock/price/id for {card_name} ({card_pk}/{card_rk}): {update_e}")
 
             except requests.exceptions.RequestException as req_e:
                 logging.error(f"Network error calling Cardtrader API for blueprint {blueprint_id} with params {api_params}: {req_e}")
