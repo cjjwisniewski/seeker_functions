@@ -213,6 +213,14 @@ def main(timer: func.TimerRequest) -> None:
         card_pk = card.get('PartitionKey')
         card_rk = card.get('RowKey')
         card_name = card.get('name', 'Unknown') # For logging
+        # Store original values read from the table for comparison later
+        original_cardtrader_id = card.get('cardtrader_id')
+        original_stock = card.get('cardtrader_stock')
+        original_price = card.get('cardtrader_low_price')
+        # Ensure original price is int or None for comparison consistency
+        if isinstance(original_price, float):
+            original_price = int(original_price)
+
 
         if not card_pk or not card_rk:
             logging.warning(f"Skipping card with missing PartitionKey or RowKey in table {user_table_to_check}: {card}")
