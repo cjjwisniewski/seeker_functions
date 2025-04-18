@@ -286,10 +286,10 @@ def main(timer: func.TimerRequest) -> None:
             logging.error(f"Error querying blueprint for {card_name} ({card_pk}/{card_rk}): {bp_e}")
             # Update stock to False on blueprint query error? Or just skip? Let's skip for now.
             # If needed, add stock update logic here similar to the 'not found' case.
-                    continue # Skip this card on blueprint query error
+            continue # Skip this card on blueprint query error
 
-                # b. If blueprint ID found, check stock via API
-                if blueprint_id: # Proceed only if a blueprint ID was successfully found
+        # b. If blueprint ID found, check stock via API
+        if blueprint_id: # Proceed only if a blueprint ID was successfully found
                     # NOTE: We do NOT modify the 'card' dictionary here yet.
                     # We will compare the found blueprint_id with original_cardtrader_id later.
 
@@ -429,164 +429,6 @@ def main(timer: func.TimerRequest) -> None:
                     try:
                         # Use the explicit payload for the update
                         user_table_client.update_entity(entity=update_payload, mode=UpdateMode.MERGE)
-                        logging.info(f"Updated card {card_name} ({card_pk}/{card_rk}) to stock={stock_status}, price={low_price}, cardtrader_id={blueprint_id}")
-                        updated_count += 1
-                    except Exception as update_e:
-                         logging.error(f"Failed to update stock/price/id for {card_name} ({card_pk}/{card_rk}): {update_e}")
-                else:
-                    # Log if no update was performed because data hasn't changed
-                    logging.debug(f"No update needed for card {card_name} ({card_pk}/{card_rk}). Stock ({stock_status}), price ({low_price}), and ID ({blueprint_id}) match original stored values.")
-
-            except requests.exceptions.RequestException as req_e:
-                logging.error(f"Network error calling Cardtrader API for blueprint {blueprint_id} with params {api_params}: {req_e}")
-                # Decide whether to continue or stop for this user
-                continue # Skip this card on network error
-            except Exception as api_e:
-                logging.error(f"Unexpected error during API check for blueprint {blueprint_id} with params {api_params}: {api_e}")
-                continue # Skip this card
-
-    # 12. Update timestamp for the checked user
-    try:
-                current_price = card.get('cardtrader_low_price') # Can be None
-                current_blueprint_id = card.get('cardtrader_id') # Get current ID (might be None if just added)
-
-                # Ensure low_price from API is int or None for comparison
-                # Azure Table Storage might return price as float if previously stored that way, handle it.
-                if isinstance(current_price, float):
-                    current_price = int(current_price) # Convert potential float from storage to int
-
-                # Check if stock, price, OR blueprint ID needs updating
-                needs_update = (
-                    current_stock != stock_status or
-                    current_price != low_price or
-                    current_blueprint_id != blueprint_id # Compare stored ID with the one we just found/confirmed
-                )
-
-                if needs_update:
-                    card['cardtrader_stock'] = stock_status
-                    card['cardtrader_low_price'] = low_price # Store as int (cents) or None
-                    card['cardtrader_id'] = blueprint_id # Ensure the ID is explicitly part of the update payload
-                    try:
-                        # Pass the modified card dictionary which now explicitly includes the latest id, stock, and price
-                        user_table_client.update_entity(entity=card, mode=UpdateMode.MERGE)
-                        logging.info(f"Updated card {card_name} ({card_pk}/{card_rk}) to stock={stock_status}, price={low_price}, cardtrader_id={blueprint_id}")
-                        updated_count += 1
-                current_time = time.time()
-                time_since_last_call = current_time - last_api_call_time
-                if time_since_last_call < RATE_LIMIT_SECONDS:
-                    wait_time = RATE_LIMIT_SECONDS - time_since_last_call
-                    logging.debug(f"Rate limiting: waiting {wait_time:.2f} seconds.")
-                    time.sleep(wait_time)
-
-                # ii. Call Cardtrader API with query parameters
-                target_language_original = card.get('language', '').lower()
-                target_finish = card.get('finish', '').lower()
-                language_map = {'zhs': 'zh-CN', 'zht': 'zh-TW'}
-                target_language_api = language_map.get(target_language_original, target_language_original)
-                api_params = {'blueprint_id': blueprint_id}
-                if target_language_api:
-                    api_params['language'] = target_language_api
-                if target_finish == 'foil':
-                    api_params['foil'] = 'true'
-                elif target_finish == 'nonfoil':
-                     api_params['foil'] = 'false'
-
-                # --- TEMPORARY TEST: Use requests.get directly ---
-                test_headers = {
-                    'Authorization': f'Bearer {CARDTRADER_API_KEY}',
-                    'Accept': 'application/json',
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36'
-                    # Note: We are *not* explicitly setting Accept-Encoding or Connection here
-                }
-                logging.info(f"[TEST] Attempting direct API call for BP {blueprint_id}. URL: {CARDTRADER_MARKETPLACE_URL}, Params: {api_params}, Headers: {test_headers}")
-                response = requests.get(CARDTRADER_MARKETPLACE_URL, params=api_params, headers=test_headers, timeout=10)
-                # --- END TEMPORARY TEST ---
-
-                last_api_call_time = time.time()
-                api_call_count += 1
-
-                # Log the raw response details immediately after
-                logging.info(f"API Response Status for BP {blueprint_id}: {response.status_code}")
-                logging.info(f"Prepared Request URL by 'requests': {response.request.url}") # Log the prepared URL
-                try:
-                    logging.info(f"API Response Text for BP {blueprint_id}: {response.text[:500]}")
-                except Exception as log_ex:
-                     logging.error(f"Error logging response text for BP {blueprint_id}: {log_ex}")
-
-                # iii. Parse response
-                stock_status = False
-                low_price = None # Initialize low_price for this card check
-                if response.status_code == 200:
-                    # Check if the response body indicates stock and find lowest price.
-                    # Example: Check if the response list is non-empty.
-                    # API filters results based on query params (language, foil).
-                    # We just need to check if the result list is non-empty.
-                    try:
-                        data = response.json()
-                        # The API returns an object with blueprint_id as key and an array of listings as value
-                        # Example for in-stock: {"42024":[{listing1}, {listing2}]}
-                        # Example for out-of-stock: {"33922":[]}
-                        str_blueprint_id = str(blueprint_id)
-                        items = data.get(str_blueprint_id)
-
-                        if isinstance(items, list) and len(items) > 0:
-                            stock_status = True
-                            # Find the lowest price in cents
-                            min_price_cents = min(item['price_cents'] for item in items if 'price_cents' in item)
-                            low_price = min_price_cents # Store as integer (cents)
-                            logging.info(f"API success for blueprint {blueprint_id} with params {api_params}. Stock found: {stock_status}, Lowest Price (cents): {low_price}")
-                        else:
-                            # Stock is false if key exists but list is empty, or key doesn't exist
-                            stock_status = False
-                            low_price = None
-                            logging.info(f"API success for blueprint {blueprint_id} with params {api_params}. Stock found: {stock_status} (Empty list or key missing)")
-
-                    except ValueError: # Includes JSONDecodeError
-                         logging.error(f"Failed to decode JSON response for blueprint {blueprint_id} with params {api_params}. URL: {response.url}, Status: {response.status_code}")
-                         stock_status = False
-                         low_price = None
-                    except Exception as parse_e:
-                         logging.error(f"Error processing Cardtrader response for blueprint {blueprint_id} with params {api_params}: {parse_e}")
-                         stock_status = False
-                         low_price = None
-                elif response.status_code == 404:
-                     # 404 likely means no items match the specific query (blueprint_id + lang + foil)
-                     logging.info(f"Cardtrader API returned 404 (Not Found) for blueprint {blueprint_id} with params {api_params}. Assuming out of stock. URL: {response.url}")
-                     stock_status = False
-                     low_price = None
-                elif response.status_code == 429:
-                    logging.error(f"Cardtrader API rate limit hit (429) for blueprint {blueprint_id} with params {api_params}. Stopping check for this user.")
-                    # Optionally break the loop or implement backoff
-                    break # Stop processing this user for now
-                else:
-                    logging.error(f"Cardtrader API error for blueprint {blueprint_id} with params {api_params}. Status: {response.status_code}, Response: {response.text[:200]}")
-                    stock_status = False
-                    low_price = None # Ensure price is None on error
-
-                # iv. Update card entity if status or price changed
-                current_stock = card.get('cardtrader_stock')
-                current_price = card.get('cardtrader_low_price') # Can be None
-                current_blueprint_id = card.get('cardtrader_id') # Get current ID (might be None if just added)
-
-                # Ensure low_price from API is int or None for comparison
-                # Azure Table Storage might return price as float if previously stored that way, handle it.
-                if isinstance(current_price, float):
-                    current_price = int(current_price) # Convert potential float from storage to int
-
-                # Check if stock, price, OR blueprint ID needs updating
-                needs_update = (
-                    current_stock != stock_status or
-                    current_price != low_price or
-                    current_blueprint_id != blueprint_id # Compare stored ID with the one we just found/confirmed
-                )
-
-                if needs_update:
-                    card['cardtrader_stock'] = stock_status
-                    card['cardtrader_low_price'] = low_price # Store as int (cents) or None
-                    card['cardtrader_id'] = blueprint_id # Ensure the ID is explicitly part of the update payload
-                    try:
-                        # Pass the modified card dictionary which now explicitly includes the latest id, stock, and price
-                        user_table_client.update_entity(entity=card, mode=UpdateMode.MERGE)
                         logging.info(f"Updated card {card_name} ({card_pk}/{card_rk}) to stock={stock_status}, price={low_price}, cardtrader_id={blueprint_id}")
                         updated_count += 1
                     except Exception as update_e:
